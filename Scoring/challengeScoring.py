@@ -45,11 +45,7 @@ mask_dir = 'Masks' # path to stored mask files
 
 scoring_type = 'mean'# set to 'median' to evaluate scores with median tumor Ktrans values  
 
-Ktrans_mean_all = [] # for repeatability analysis
-Ktrans_mask_allvox_rep = [] #voxelwise reproducibility analysis
-Ktrans_synthetic_diff_all = [] #voxelwise accuracy analysis
-all_repeat_scores = []
-
+# Initial file clear-outs
 with open('scoringOutputs/OSIPI_scores.txt', 'w') as f:
     f.write('Scores for teams listed. \n \n \n')
 
@@ -61,8 +57,12 @@ with open('scoringOutputs/OSIPI_score_tabular.txt', 'w') as f:
 
 with open('scoringOutputs/TMROI_Ktrans.txt', 'w') as f:
     f.write("Team \t"+"\t".join(labels)+"\n")
-    
-for entries in entry_list: # cycles through each emtrance directory from list above
+
+
+def evaluate_entry(entries):
+    """
+    Evaluate a single entry and return structured scoring results.
+    """
     
     # walk through the directory and carry out extraction if finds .nii type files
     c_fnames = [] # to loop through correct clinical patients (repeatability)
@@ -237,7 +237,6 @@ for entries in entry_list: # cycles through each emtrance directory from list ab
         total_diff += [v2_diff.flatten(),]
         
     all_diff = np.concatenate( total_diff, axis=0 )
-    Ktrans_synthetic_diff_all += [all_diff] # For voxelwise accuracy analysis
     
     a_score = (np.exp(  - (asum/(2*len(synthetic_P)) ) ))  # calculate accuracy score    
     
@@ -267,7 +266,7 @@ for entries in entry_list: # cycles through each emtrance directory from list ab
             
             m_1 = nocanonical_get_array_from_nifti('{}/{}'.format(mask_dir, all_mask_fnames[i*2])) # load mask arrays
             m_2 = nocanonical_get_array_from_nifti('{}/{}'.format(mask_dir, all_mask_fnames[(i*2)+1]))
- 
+
             masked_v1 = v1 * m_1  
             masked_v2 = v2 * m_2    
             masked_repro_v1 = repro_v1 * m_1
@@ -336,109 +335,149 @@ for entries in entry_list: # cycles through each emtrance directory from list ab
         Ktrans_mask_mean_rep = [] # for Ktrans table
         Ktrans_mask_mean_rep += ['NA']*20
     
-    Ktrans_mask_allvox_rep += [Ktrans_mask_vox_rep] #for voxelwise reproducibility analysis
-    Ktrans_mean_all += [Ktrans_mask_mean,] #For repeatability visit analysis
-    all_repeat_scores += [r_score,]
-    # Write output file 
-    with open('scoringOutputs/OSIPI_scores.txt', 'a') as f: # append scores into file
-        f.write("Entry team: "+"{}".format(entries)+"\n")
-        f.write("Reproducibility Score: "+"{:.3f}".format(repro_score)+ "\n")
-        f.write("Repeatability Score: "+ "{:.3f}".format(r_score)+"\n")
-        f.write("Accuracy Score: " +"{:.3f}".format(a_score) + "\n")
-        f.write("OSIPI Score silver: "+"{:.1f}".format((r_score * a_score )*100) +"% " +" \n")
-        f.write("OSIPI Score gold: "+"{:.1f}".format((r_score * a_score*repro_score )*100) +"% " +" \n \n \n")
-    with open('scoringOutputs/OSIPI_score_tabular.txt', 'a') as f:
-        f.write('{} \t {:.3f} \t {:.3f} \t {:.3f} \t {:.1f} \t {:.1f} \n'.format(entries,a_score,r_score,repro_score,(r_score * a_score )*100,(r_score * a_score *repro_score)*100))
+    results = {
+        "team": entries,
+        "accuracy": float(a_score),
+        "repeatability": float(r_score),
+        "reproducibility": float(repro_score),
+        "silver_score": float(r_score * a_score * 100),
+        "gold_score": float(r_score * a_score * repro_score * 100),
+        # Fields cleanly passed back to preserve legacy outputs & plotting without breaking globals
+        "Ktrans_mask_mean": Ktrans_mask_mean,
+        "Ktrans_mask_mean_gt": Ktrans_mask_mean_gt,
+        "Ktrans_mask_std": Ktrans_mask_std,
+        "Ktrans_mask_mean_rep": Ktrans_mask_mean_rep,
+        "dKtrans_prop": dKtrans_prop,
+        "dKtrans_prop_gt": dKtrans_prop_gt,
+        "Ktrans_mask_vox_rep": Ktrans_mask_vox_rep,
+        "all_diff": all_diff
+    }
+
+    return results
+
+
+if __name__ == "__main__":
     
-    with open('scoringOutputs/TMROI_Ktrans.txt', 'a') as f:
-        if entries == entry_list[0]:
-            f.write("gt \t"+"\t".join([str(a) for a in Ktrans_mask_mean_gt])+"\n")
-        f.write("{}_entry \t".format(entries)+"\t".join([str(a) for a in Ktrans_mask_mean])+"\n")
-        f.write("{}_sd \t".format(entries)+"\t".join([str(a) for a in Ktrans_mask_std])+"\n")
-        f.write("{}_repro \t".format(entries)+"\t".join([str(a) for a in Ktrans_mask_mean_rep])+"\n")
+    # Global lists moved to execution block for plotting & stats compilation
+    Ktrans_mask_allvox_rep = [] 
+    Ktrans_mean_all = [] 
+    Ktrans_synthetic_diff_all = [] 
+    all_repeat_scores = []
     
-    with open('scoringOutputs/proportional_change_Ktrans_from_DRO.txt', 'a') as f:
-        if entries == entry_list[0]:
-            f.write('DRO \t {:.3f} \t {:.3f} \n'.format(dKtrans_prop_gt[0], dKtrans_prop_gt[1]))
-        f.write('{} \t {:.3f} \t {:.3f} \n'.format(entries,dKtrans_prop[0], dKtrans_prop[1]))
+    for entries in entry_list:
+        results = evaluate_entry(entries)
 
-#%% Reproducibility - all data points
+        # Append array structures natively to preserve downstream logic
+        Ktrans_mask_allvox_rep.append(results["Ktrans_mask_vox_rep"])
+        Ktrans_mean_all.append(results["Ktrans_mask_mean"])
+        Ktrans_synthetic_diff_all.append(results["all_diff"])
+        all_repeat_scores.append(results["repeatability"])
 
-with open('scoringOutputs/reproducability_statistics.txt', 'w') as f:
-    f.write('Team \t repro mean diff \t repro SD diff \t repro median diff \t repro LQ diff  \t  repro UQ diff \n')
+        # Legacy file writing preserved entirely in the execution block
+        with open('scoringOutputs/OSIPI_scores.txt', 'a') as f:
+            f.write("Entry team: {}\n".format(results["team"]))
+            f.write("Reproducibility Score: {:.3f}\n".format(results["reproducibility"]))
+            f.write("Repeatability Score: {:.3f}\n".format(results["repeatability"]))
+            f.write("Accuracy Score: {:.3f}\n".format(results["accuracy"]))
+            f.write("OSIPI Score silver: {:.1f}%\n".format(results["silver_score"]))
+            f.write("OSIPI Score gold: {:.1f}%\n\n\n".format(results["gold_score"]))
 
+        with open('scoringOutputs/OSIPI_score_tabular.txt', 'a') as f:
+            f.write('{} \t {:.3f} \t {:.3f} \t {:.3f} \t {:.1f} \t {:.1f}\n'.format(
+                results["team"], results["accuracy"], results["repeatability"],
+                results["reproducibility"], results["silver_score"], results["gold_score"]
+            ))
 
-for j in range(0,len(entry_list)):
-    boxplot_list = list(itertools.chain(*Ktrans_mask_allvox_rep[j]))
-    with open('scoringOutputs/reproducability_statistics.txt', 'a') as f:
-        f.write('{} \t {:.3e} \t {:.3e} \t {:.3e} \t {:.3e} \t {:.3e}\n'.format(entry_list[j-1],np.mean(np.asarray(boxplot_list)),np.std(np.asarray(boxplot_list)),np.median(np.asarray(boxplot_list)),np.percentile(np.asarray(boxplot_list),25),np.percentile(np.asarray(boxplot_list),75)))
-
-if plotting == 'On':
-    print('Plotting enabled...')
-    #%% Accuracy diffs
-    colors = sns.color_palette("tab20b", n_colors=12).as_hex()
-    adj_colors = np.delete(np.asarray(colors),(0,len(entry_list)+1))
-    plt.rcParams.update({'font.size':26})
-    fig, ax = plt.subplots(nrows=1,ncols=1,figsize=(10,12),dpi=100,sharey=True, sharex=True)
-    
-    medianprops = dict(linestyle='-', linewidth=2.5, color='black')
-    meanpointprops = dict(marker='o', markeredgecolor='black',markerfacecolor='firebrick')
-    bplot=ax.boxplot(Ktrans_synthetic_diff_all,zorder=2,vert = False,whis=(5,95),showfliers=False,showmeans=True,meanprops=meanpointprops, medianprops=medianprops, patch_artist=True, positions=np.flip(range(1,len(entry_list)+1)))
-    for patch, color in zip(bplot['boxes'], adj_colors):
-                patch.set_facecolor(color)
-    ax.set_xlim([-0.3,0.5])
-    ax.set_xlabel('$\Delta K^{trans}$')
-    ax.axvline(x=0,linestyle='--',color='k',zorder=1)
-    plt.yticks(np.flip(np.arange(1, len(entry_list)+1,1)), entry_list)
-    fig.savefig('scoringOutputs/accuracy_voxdiff_boxplot.eps', bbox_inches='tight')
-    fig.savefig('scoringOutputs/accuracy_voxdiff_boxplot.png', bbox_inches='tight')
-    plt.show()
-    
-    #%% Repeatability
-    diff_means = []
-    diff_stdevs = []
-    Ktrans_diff_all = []
-    RCperc = []
-    for j in range(0,len(entry_list)):
-        Ktrans_diff = []
-        wCV = []
-        for i in np.arange(0, 15, 2):
-            v1 = Ktrans_mean_all[j][i]
-            v2 = Ktrans_mean_all[j][i+1]
-            Ktrans_diff += [(v1-v2),]
-            wCV += [np.std((v1,v2))**2/np.mean((v1,v2))**2,]
-        current_RCperc = 2.77*(100*(np.sqrt(np.mean(np.asarray(wCV)))))
-        RCperc += [current_RCperc,]
-        Ktrans_diff_all +=[Ktrans_diff,]
-        Ktrans_diff = np.asarray(Ktrans_diff)
-        diff_means += [np.mean(Ktrans_diff),]
-        diff_stdevs += [np.std(Ktrans_diff),]
+        with open('scoringOutputs/TMROI_Ktrans.txt', 'a') as f:
+            if entries == entry_list[0]:
+                f.write("gt \t"+"\t".join([str(a) for a in results["Ktrans_mask_mean_gt"]])+"\n")
+            f.write("{}_entry \t".format(entries)+"\t".join([str(a) for a in results["Ktrans_mask_mean"]])+"\n")
+            f.write("{}_sd \t".format(entries)+"\t".join([str(a) for a in results["Ktrans_mask_std"]])+"\n")
+            f.write("{}_repro \t".format(entries)+"\t".join([str(a) for a in results["Ktrans_mask_mean_rep"]])+"\n")
         
-    if len(RCperc) >= 2:
-        Pcoeff = scipy.stats.pearsonr(RCperc,all_repeat_scores)
-        print('r = {}, p = {}'.format(Pcoeff[0],Pcoeff[1]))
-    else:
-        print('Insufficient entry teams to calculate correlation.')
-    
-    plt.rcParams.update({'font.size':26})
-    fig, ax = plt.subplots(nrows=1,ncols=1,figsize=(10,12),dpi=100,sharey=True, sharex=True)
-    
-    medianprops = dict(linestyle='-', linewidth=2.5, color='black')
-    meanpointprops = dict(marker='o', markeredgecolor='black',markerfacecolor='firebrick')
-    bplot=ax.boxplot(Ktrans_diff_all,vert = False,whis=(5,95),showfliers=False,showmeans=True,meanprops=meanpointprops, medianprops=medianprops, patch_artist=True, positions=np.flip(range(1,len(entry_list)+1)))
-    for patch, color in zip(bplot['boxes'], adj_colors):
-                patch.set_facecolor(color)
-    ax.set_xlim([-0.1,0.1])
-    ax.axvline(x=0,linestyle='--',color='k',zorder=1)
-    ax.set_xlabel('$K^{trans}$ change between clinical visits',fontsize=26)
-    plt.yticks(np.flipud(np.arange(1,len(entry_list)+1,1)), entry_list)
-    
-    fig.savefig('scoringOutputs/clinical_patients_repeatability_boxplot.eps', bbox_inches='tight')
-    fig.savefig('scoringOutputs/clinical_patients_repeatability_boxplot.png', bbox_inches='tight')
-    
-    plt.show()
+        with open('scoringOutputs/proportional_change_Ktrans_from_DRO.txt', 'a') as f:
+            if entries == entry_list[0]:
+                f.write('DRO \t {:.3f} \t {:.3f} \n'.format(results["dKtrans_prop_gt"][0], results["dKtrans_prop_gt"][1]))
+            f.write('{} \t {:.3f} \t {:.3f} \n'.format(entries, results["dKtrans_prop"][0], results["dKtrans_prop"][1]))
 
-else:
-    print('Finished! To display plots run with plotting to enabled.')
-    
-print('View scoringOutputs for all generated ouputs')
+    #%% Reproducibility - all data points
+    with open('scoringOutputs/reproducability_statistics.txt', 'w') as f:
+        f.write('Team \t repro mean diff \t repro SD diff \t repro median diff \t repro LQ diff  \t  repro UQ diff \n')
+
+    for j in range(0,len(entry_list)):
+        boxplot_list = list(itertools.chain(*Ktrans_mask_allvox_rep[j]))
+        with open('scoringOutputs/reproducability_statistics.txt', 'a') as f:
+            f.write('{} \t {:.3e} \t {:.3e} \t {:.3e} \t {:.3e} \t {:.3e}\n'.format(
+                entry_list[j], np.mean(np.asarray(boxplot_list)), np.std(np.asarray(boxplot_list)),
+                np.median(np.asarray(boxplot_list)), np.percentile(np.asarray(boxplot_list),25),
+                np.percentile(np.asarray(boxplot_list),75)))
+
+    if plotting == 'On':
+        print('Plotting enabled...')
+        #%% Accuracy diffs
+        colors = sns.color_palette("tab20b", n_colors=12).as_hex()
+        adj_colors = np.delete(np.asarray(colors),(0,len(entry_list)+1))
+        plt.rcParams.update({'font.size':26})
+        fig, ax = plt.subplots(nrows=1,ncols=1,figsize=(10,12),dpi=100,sharey=True, sharex=True)
+        
+        medianprops = dict(linestyle='-', linewidth=2.5, color='black')
+        meanpointprops = dict(marker='o', markeredgecolor='black',markerfacecolor='firebrick')
+        bplot=ax.boxplot(Ktrans_synthetic_diff_all,zorder=2,vert = False,whis=(5,95),showfliers=False,showmeans=True,meanprops=meanpointprops, medianprops=medianprops, patch_artist=True, positions=np.flip(range(1,len(entry_list)+1)))
+        for patch, color in zip(bplot['boxes'], adj_colors):
+                    patch.set_facecolor(color)
+        ax.set_xlim([-0.3,0.5])
+        ax.set_xlabel('$\Delta K^{trans}$')
+        ax.axvline(x=0,linestyle='--',color='k',zorder=1)
+        plt.yticks(np.flip(np.arange(1, len(entry_list)+1,1)), entry_list)
+        fig.savefig('scoringOutputs/accuracy_voxdiff_boxplot.eps', bbox_inches='tight')
+        fig.savefig('scoringOutputs/accuracy_voxdiff_boxplot.png', bbox_inches='tight')
+        plt.show()
+        
+        #%% Repeatability
+        diff_means = []
+        diff_stdevs = []
+        Ktrans_diff_all = []
+        RCperc = []
+        for j in range(0,len(entry_list)):
+            Ktrans_diff = []
+            wCV = []
+            for i in np.arange(0, 15, 2):
+                v1 = Ktrans_mean_all[j][i]
+                v2 = Ktrans_mean_all[j][i+1]
+                Ktrans_diff += [(v1-v2),]
+                wCV += [np.std((v1,v2))**2/np.mean((v1,v2))**2,]
+            current_RCperc = 2.77*(100*(np.sqrt(np.mean(np.asarray(wCV)))))
+            RCperc += [current_RCperc,]
+            Ktrans_diff_all +=[Ktrans_diff,]
+            Ktrans_diff = np.asarray(Ktrans_diff)
+            diff_means += [np.mean(Ktrans_diff),]
+            diff_stdevs += [np.std(Ktrans_diff),]
+            
+        if len(RCperc) >= 2:
+            Pcoeff = scipy.stats.pearsonr(RCperc,all_repeat_scores)
+            print('r = {}, p = {}'.format(Pcoeff[0],Pcoeff[1]))
+        else:
+            print('Insufficient entry teams to calculate correlation.')
+        
+        plt.rcParams.update({'font.size':26})
+        fig, ax = plt.subplots(nrows=1,ncols=1,figsize=(10,12),dpi=100,sharey=True, sharex=True)
+        
+        medianprops = dict(linestyle='-', linewidth=2.5, color='black')
+        meanpointprops = dict(marker='o', markeredgecolor='black',markerfacecolor='firebrick')
+        bplot=ax.boxplot(Ktrans_diff_all,vert = False,whis=(5,95),showfliers=False,showmeans=True,meanprops=meanpointprops, medianprops=medianprops, patch_artist=True, positions=np.flip(range(1,len(entry_list)+1)))
+        for patch, color in zip(bplot['boxes'], adj_colors):
+                    patch.set_facecolor(color)
+        ax.set_xlim([-0.1,0.1])
+        ax.axvline(x=0,linestyle='--',color='k',zorder=1)
+        ax.set_xlabel('$K^{trans}$ change between clinical visits',fontsize=26)
+        plt.yticks(np.flipud(np.arange(1,len(entry_list)+1,1)), entry_list)
+        
+        fig.savefig('scoringOutputs/clinical_patients_repeatability_boxplot.eps', bbox_inches='tight')
+        fig.savefig('scoringOutputs/clinical_patients_repeatability_boxplot.png', bbox_inches='tight')
+        
+        plt.show()
+
+    else:
+        print('Finished! To display plots run with plotting to enabled.')
+        
+    print('View scoringOutputs for all generated outputs')

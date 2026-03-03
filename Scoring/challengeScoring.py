@@ -14,6 +14,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import scipy.stats
 import itertools
+from scoring_core.metrics import (
+    compute_cov,
+    compute_rmse,
+    compute_repeatability,
+    compute_accuracy,
+    compute_reproducibility,
+)
 ## Syntheitic_P1 is patient ID 'RIDER Neuro MRI-7868737135'
 ## Synthetic_P2 is is patient ID 'RIDE Neuro MRI-9215224289'
 
@@ -142,9 +149,7 @@ for entries in entry_list: # cycles through each emtrance directory from list ab
         Ktrans_mask_mean += [sfround(mean_v1, sigfigs=3)] # for Ktrans table and repeatability analysis
         Ktrans_mask_mean += [sfround(mean_v2, sigfigs=3)] # for Ktrans table and repeatability analysis
         
-        mean = np.mean((mean_v1,mean_v2))
-        stdev = np.std((mean_v1,mean_v2))
-        frac_var = stdev/mean # coefficient of variation
+        frac_var = compute_cov(mean_v1, mean_v2)
         rsum += frac_var
     r_score = (np.exp(  - (rsum/len(clinical_P)) )) # caluclate repeatability score
     
@@ -200,9 +205,7 @@ for entries in entry_list: # cycles through each emtrance directory from list ab
         else:
             print('No/invalid scoring type selected')
         
-        mean = np.mean((mean_v1,mean_gtv1))
-        stdev = np.std((mean_v1,mean_gtv1))
-        frac_var_v1 = stdev/mean #coefficient of variation v1
+        frac_var_v1 = compute_cov(mean_v1, mean_gtv1)
         
         if scoring_type == 'mean':
             mean_v2 = masked_v2[combo_m2==1].mean()
@@ -213,10 +216,7 @@ for entries in entry_list: # cycles through each emtrance directory from list ab
         else:
             print('No/invalid scoring type selected')
         
-        mean = np.mean((mean_v2,mean_gtv2))
-        stdev = np.std((mean_v2,mean_gtv2))
-        frac_var_v2 = stdev/mean #coefficient of variation v2
-        
+        frac_var_v2 = compute_cov(mean_v2, mean_gtv2)
         asum += frac_var_v1 + frac_var_v2 # variation sum for score
         
         dK = (mean_v1-mean_v2)/mean_v1
@@ -307,9 +307,7 @@ for entries in entry_list: # cycles through each emtrance directory from list ab
                 mean_repro_v1 = np.median(masked_repro_v1[combo_m1_r==1])
             else:
                 print('No/invalid scoring type selected')
-            mean = np.mean((mean_v1,mean_repro_v1))
-            stdev = np.std((mean_v1,mean_repro_v1))
-            frac_var_v1 = stdev/mean
+            frac_var_v1 = compute_cov(mean_v1, mean_repro_v1)
             
             if scoring_type == 'mean':
                 mean_v2 = masked_v2[combo_m2==1].mean()
@@ -320,9 +318,7 @@ for entries in entry_list: # cycles through each emtrance directory from list ab
             else:
                 print('No/invalid scoring type selected')
                 
-            mean = np.mean((mean_v2,mean_repro_v2))
-            stdev = np.std((mean_v2,mean_repro_v2))
-            frac_var_v2 = stdev/mean
+            frac_var_v2 = compute_cov(mean_v2, mean_repro_v2)
             repro_sum += frac_var_v1 + frac_var_v2
             
             repro_diff_v1 = masked_v1-masked_repro_v1 # for voxelwise reproducibility
